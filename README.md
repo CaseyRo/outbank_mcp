@@ -4,6 +4,11 @@ Local-first finance workspace with a read-only MCP query service on top of
 Postgres and NocoDB. The stack is designed for importing Outbank CSV exports,
 normalizing transactions, and querying them safely from LLM tools.
 
+> ⚠️ 🔒 🚫 **Local-only warning**  
+> This project is intended for local-only use.  
+> Exposing the MCP service publicly is out of scope and entirely at your own risk.  
+> See `docs/security.md` for recommended local-only and optional HTTP auth setup.
+
 ## What is here
 - Docker Compose stack for Postgres, NocoDB, Metabase, and the MCP service
 - MCP tools for fuzzy transaction search with filters
@@ -27,6 +32,7 @@ normalizing transactions, and querying them safely from LLM tools.
 ## Docs
 - Stack overview: `docs/stack.md`
 - MCP service details: `docs/mcp.md`
+- Security guide: `docs/security.md`
 - Outbank CSV import steps: `docs/outbank-import.md`
 - Metabase starter queries: `docs/metabase.md`
 

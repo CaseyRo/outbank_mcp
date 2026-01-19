@@ -10,6 +10,8 @@ The service reads its configuration from `.env` or Docker Compose variables.
 Start by copying `.env.example` to `.env` so defaults are in place.
 
 - `MCP_PORT` (default `6668`)
+- `MCP_HTTP_AUTH_ENABLED` (default `false`)
+- `MCP_HTTP_AUTH_TOKEN` (optional shared token for HTTP auth)
 - `NOCODB_BASE_URL` (default `http://nocodb:8080`)
 - `NOCODB_TOKEN` (optional API token, sent as `xc-token`)
 - `NOCODB_TABLE` (required table id or name, default `transactions`)
@@ -64,6 +66,10 @@ The tool returns a normalized result set with:
 - `description`
 - `source_table`
 - `score` (fuzzy match score)
+
+## Security
+This service is intended for local-only use. If you need to add basic access
+control on HTTP, see `docs/security.md` for the shared token setup.
 
 ## Test scripts
 Basic to advanced MCP test calls are available under `scripts/mcp-tests/`.
