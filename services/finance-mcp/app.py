@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_headers
 
 
 def _env_int(name: str, default: int) -> int:
@@ -27,6 +28,40 @@ def _env_float(name: str, default: float) -> float:
         return float(value)
     except ValueError as exc:
         raise ValueError(f"{name} must be a number") from exc
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _http_auth_enabled() -> bool:
+    token = os.getenv("MCP_HTTP_AUTH_TOKEN", "").strip()
+    if os.getenv("MCP_HTTP_AUTH_ENABLED") is None:
+        return bool(token)
+    return _env_bool("MCP_HTTP_AUTH_ENABLED", False)
+
+
+def _require_http_auth() -> None:
+    if not _http_auth_enabled():
+        return
+    try:
+        headers = get_http_headers()
+    except Exception:
+        return
+    if not headers:
+        return
+    auth_header = headers.get("authorization") or headers.get("Authorization") or ""
+    scheme, _, provided = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not provided.strip():
+        raise PermissionError("Unauthorized")
+    expected = os.getenv("MCP_HTTP_AUTH_TOKEN", "").strip()
+    if not expected:
+        raise PermissionError("Unauthorized: MCP_HTTP_AUTH_TOKEN not set")
+    if provided.strip() != expected:
+        raise PermissionError("Unauthorized")
 
 
 def _parse_amount(value: Any) -> Optional[float]:
@@ -240,6 +275,7 @@ def search_transactions(
     sort: str = "-date",
 ) -> Dict[str, Any]:
     """Search transactions with fuzzy matching and optional filters."""
+    _require_http_auth()
     client = NocoDBClient()
     fields = _load_field_map()
 
@@ -321,6 +357,7 @@ def search_transactions(
 @mcp.tool()
 def describe_fields() -> Dict[str, Any]:
     """Return current NocoDB field mapping configuration."""
+    _require_http_auth()
     fields = _load_field_map()
     return {
         "table": os.getenv("NOCODB_TABLE"),

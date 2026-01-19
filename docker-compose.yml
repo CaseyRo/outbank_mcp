@@ -34,6 +34,8 @@ services:
     environment:
       MCP_HOST: 0.0.0.0
       MCP_PORT: ${MCP_PORT:-6668}
+      MCP_HTTP_AUTH_ENABLED: ${MCP_HTTP_AUTH_ENABLED:-false}
+      MCP_HTTP_AUTH_TOKEN: ${MCP_HTTP_AUTH_TOKEN:-}
       NOCODB_BASE_URL: ${NOCODB_BASE_URL:-http://nocodb:8080}
       NOCODB_TOKEN: ${NOCODB_TOKEN:-}
       NOCODB_TABLE: ${NOCODB_TABLE:-transactions}

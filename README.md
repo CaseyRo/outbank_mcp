@@ -19,9 +19,9 @@ normalizing transactions, and querying them safely from LLM tools.
    ```bash
    docker compose up -d
    ```
-4. Initialize schema:
+4. Initialize schema (run inside the Postgres container):
    ```bash
-   psql postgresql://finance:finance@localhost:5432/finance -f db/schema.sql
+   docker compose exec postgres psql -U finance -d finance -f /app/db/schema.sql
    ```
 
 ## Docs
@@ -45,9 +45,11 @@ normalizing transactions, and querying them safely from LLM tools.
 
 ## Get the app
 
-<a href="https://apps.apple.com/de/app/outbank-banking-finanzen/id1094254051">
-  <img alt="Download on the App Store" src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" height="64">
-</a>
-<a href="https://play.google.com/store/apps/details?id=com.stoegerit.outbank.android">
-  <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="64">
-</a>
+<p>
+  <a href="https://apps.apple.com/de/app/outbank-banking-finanzen/id1094254051" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
+    <img alt="Download on the App Store" src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us" height="56px" style="max-height:56px">
+  </a>
+  <a href="https://play.google.com/store/apps/details?id=com.stoegerit.outbank.android" style="display: inline-block; vertical-align: middle;">
+    <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="56px" style="max-height:56px">
+  </a>
+</p>
