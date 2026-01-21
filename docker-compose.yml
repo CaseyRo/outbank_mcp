@@ -1,68 +1,17 @@
 services:
-  postgres:
-    image: postgres:16
-    container_name: finance-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-finance}
-      POSTGRES_USER: ${POSTGRES_USER:-finance}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finance}
-    ports:
-      - "5432:5432"
-    volumes:
-      - "${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data"
-
-  nocodb:
-    image: nocodb/nocodb:latest
-    container_name: finance-nocodb
-    restart: unless-stopped
-    depends_on:
-      - postgres
-    environment:
-      NC_DB: "pg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-finance}@postgres:5432/${POSTGRES_DB:-finance}"
-    ports:
-      - "8080:8080"
-    volumes:
-      - "${DATA_DIR:-/mnt/data}/nocodb:/usr/app/data"
-
   finance-mcp:
-    build: ./services/finance-mcp
+    build: .
     container_name: finance-mcp
     restart: unless-stopped
-    depends_on:
-      - nocodb
     environment:
-      MCP_HOST: 0.0.0.0
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-stdio}
+      MCP_HOST: ${MCP_HOST:-0.0.0.0}
       MCP_PORT: ${MCP_PORT:-6668}
-      MCP_HTTP_AUTH_ENABLED: ${MCP_HTTP_AUTH_ENABLED:-false}
       MCP_HTTP_AUTH_TOKEN: ${MCP_HTTP_AUTH_TOKEN:-}
-      NOCODB_BASE_URL: ${NOCODB_BASE_URL:-http://nocodb:8080}
-      NOCODB_TOKEN: ${NOCODB_TOKEN:-}
-      NOCODB_TABLE: ${NOCODB_TABLE:-transactions}
-      NOCODB_VIEW_ID: ${NOCODB_VIEW_ID:-}
-      NOCODB_PAGE_SIZE: ${NOCODB_PAGE_SIZE:-200}
-      NOCODB_MAX_PAGES: ${NOCODB_MAX_PAGES:-5}
-      NOCODB_FIELD_ID: ${NOCODB_FIELD_ID:-id}
-      NOCODB_FIELD_DATE: ${NOCODB_FIELD_DATE:-booking_date}
-      NOCODB_FIELD_AMOUNT: ${NOCODB_FIELD_AMOUNT:-amount}
-      NOCODB_FIELD_CURRENCY: ${NOCODB_FIELD_CURRENCY:-currency}
-      NOCODB_FIELD_ACCOUNT: ${NOCODB_FIELD_ACCOUNT:-account}
-      NOCODB_FIELD_IBAN: ${NOCODB_FIELD_IBAN:-counterparty_account}
-      NOCODB_FIELD_DESCRIPTION: ${NOCODB_FIELD_DESCRIPTION:-reason}
-      NOCODB_FIELD_COUNTERPARTY: ${NOCODB_FIELD_COUNTERPARTY:-counterparty_name}
       MCP_MIN_SCORE: ${MCP_MIN_SCORE:-0.55}
+      OUTBANK_CSV_DIR: ${OUTBANK_CSV_DIR:-/app/outbank_exports}
+      OUTBANK_CSV_GLOB: ${OUTBANK_CSV_GLOB:-*.csv}
     ports:
       - "${MCP_PORT:-6668}:${MCP_PORT:-6668}"
-
-  metabase:
-    image: metabase/metabase:latest
-    container_name: finance-metabase
-    restart: unless-stopped
-    depends_on:
-      - postgres
-    environment:
-      MB_DB_FILE: /metabase-data/metabase.db
-    ports:
-      - "3000:3000"
     volumes:
-      - "${DATA_DIR:-/mnt/data}/metabase:/metabase-data"
+      - "${OUTBANK_CSV_DIR:-./outbank_exports}:/app/outbank_exports:ro"

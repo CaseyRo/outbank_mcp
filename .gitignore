@@ -13,6 +13,9 @@ __pycache__/
 .venv/
 venv/
 
+# uv
+.uv/
+
 # Docker
 *.pid
 
@@ -23,6 +26,8 @@ venv/
 
 # Logs
 *.log
+test-logs/
+!test-logs/.gitkeep
 
 # AI tooling (local config, caches, outputs)
 .cursorignore
@@ -35,3 +40,6 @@ venv/
 .aider_output/
 .windsurf/
 windsurf.config.json
+
+# project specific
+outbank_exports/

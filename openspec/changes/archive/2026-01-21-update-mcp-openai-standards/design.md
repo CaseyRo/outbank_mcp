@@ -30,5 +30,4 @@ The finance MCP service currently exposes tools over HTTP and documents optional
 - Update docs for running, security, and OpenAI MCP approval readiness.
 
 ## Open Questions
-- Which OpenAI MCP standard version should we align to (date/versioned docs)?
-- Does approval require specific tool examples, rate limits, or safety notes beyond schema and descriptions?
+- None. Align to MCP spec version 2025-11-25 and document approval readiness as a checklist based on that spec.

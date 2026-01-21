@@ -18,13 +18,12 @@ Set `OUTBANK_CSV_DIR` to the folder containing your CSV exports. Optional:
 
 ## Install dependencies
 ```bash
-uv venv
-uv pip install -r services/finance-mcp/requirements.txt
+uv sync
 ```
 
 ## Run the MCP service
 ```bash
-uv run python services/finance-mcp/app.py
+uv run python app.py
 ```
 
 ## MCP query service
