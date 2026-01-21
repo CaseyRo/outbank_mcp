@@ -1,0 +1,11 @@
+[project]
+name = "mcp-outbank"
+version = "0.1.0"
+description = "Local-first Outbank CSV MCP query service"
+requires-python = ">=3.10"
+dependencies = [
+  "fastmcp",
+]
+
+[tool.uv]
+dev-dependencies = []

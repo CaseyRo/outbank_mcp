@@ -6,20 +6,19 @@ risk. If you publish this service, you are responsible for hardening,
 monitoring, and access control.
 
 ## Recommended local-only setup
-- Keep Docker ports bound to localhost.
+- Bind the MCP service to localhost (default `0.0.0.0` can be changed via `MCP_HOST`).
 - Use a firewall or VPN if you must access the service remotely.
 
-Example Docker Compose port binding:
-```yaml
-ports:
-  - "127.0.0.1:6668:6668"
+Example local-only binding:
+```bash
+MCP_HOST=127.0.0.1
 ```
 
 ## Optional HTTP token auth
 The MCP service can enforce a single shared token for HTTP requests.
 
 ### Configuration
-Set these in `.env` (or Docker Compose environment):
+Set these in `.env` or your shell environment:
 - `MCP_HTTP_AUTH_ENABLED=true`
 - `MCP_HTTP_AUTH_TOKEN=your-secret-token`
 

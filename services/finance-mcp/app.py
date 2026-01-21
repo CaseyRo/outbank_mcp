@@ -1,11 +1,10 @@
-import json
+import csv
 import os
-from dataclasses import dataclass
-from datetime import datetime, date
+from datetime import date, datetime
 from difflib import SequenceMatcher
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-import requests
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 
@@ -73,7 +72,7 @@ def _parse_amount(value: Any) -> Optional[float]:
         cleaned = value.strip().replace(" ", "")
         if cleaned == "":
             return None
-        cleaned = cleaned.replace(",", ".")
+        cleaned = cleaned.replace(".", "").replace(",", ".")
         try:
             return float(cleaned)
         except ValueError:
@@ -92,7 +91,12 @@ def _parse_date(value: Any) -> Optional[date]:
         value = value.strip()
         if value == "":
             return None
-        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+        for fmt in (
+            "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%d.%m.%Y",
+        ):
             try:
                 return datetime.strptime(value, fmt).date()
             except ValueError:
@@ -120,78 +124,157 @@ def _similarity(needle: str, haystack: str) -> float:
     return SequenceMatcher(None, needle, haystack).ratio()
 
 
-@dataclass(frozen=True)
-class FieldMap:
-    row_id: str
-    date: str
-    amount: str
-    currency: str
-    account: str
-    iban: str
-    description: str
-    counterparty: str
+EXPECTED_HEADERS = [
+    "#",
+    "Account",
+    "Date",
+    "Value Date",
+    "Amount",
+    "Currency",
+    "Name",
+    "Number",
+    "Bank",
+    "Reason",
+    "Category",
+    "Subcategory",
+    "Category-Path",
+    "Tags",
+    "Note",
+    "Posting Text",
+]
+
+_TRANSACTIONS: List[Dict[str, Any]] = []
+_TRANSACTION_KEYS: Set[str] = set()
+_DATA_LOADED = False
+_STORE_METADATA: Dict[str, Any] = {"files_scanned": 0}
 
 
-def _load_field_map() -> FieldMap:
-    return FieldMap(
-        row_id=os.getenv("NOCODB_FIELD_ID", "id"),
-        date=os.getenv("NOCODB_FIELD_DATE", "booking_date"),
-        amount=os.getenv("NOCODB_FIELD_AMOUNT", "amount"),
-        currency=os.getenv("NOCODB_FIELD_CURRENCY", "currency"),
-        account=os.getenv("NOCODB_FIELD_ACCOUNT", "account"),
-        iban=os.getenv("NOCODB_FIELD_IBAN", "counterparty_account"),
-        description=os.getenv("NOCODB_FIELD_DESCRIPTION", "reason"),
-        counterparty=os.getenv("NOCODB_FIELD_COUNTERPARTY", "counterparty_name"),
-    )
+def _csv_directory() -> Path:
+    return Path(os.getenv("OUTBANK_CSV_DIR", "./outbank_exports")).expanduser()
 
 
-class NocoDBClient:
-    def __init__(self) -> None:
-        base_url = os.getenv("NOCODB_BASE_URL", "http://nocodb:8080").rstrip("/")
-        table = os.getenv("NOCODB_TABLE")
-        if not table:
-            raise ValueError("NOCODB_TABLE is required (table id or name)")
-        self.base_url = base_url
-        self.table = table
-        self.view_id = os.getenv("NOCODB_VIEW_ID")
-        self.page_size = _env_int("NOCODB_PAGE_SIZE", 200)
-        self.max_pages = _env_int("NOCODB_MAX_PAGES", 5)
-        token = os.getenv("NOCODB_TOKEN")
-        self.headers = {"xc-token": token} if token else {}
+def _csv_glob() -> str:
+    return os.getenv("OUTBANK_CSV_GLOB", "*.csv")
 
-    def fetch_rows(self) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
-        offset = 0
-        for _ in range(self.max_pages):
-            params: Dict[str, Any] = {"limit": self.page_size, "offset": offset}
-            if self.view_id:
-                params["viewId"] = self.view_id
-            response = requests.get(
-                f"{self.base_url}/api/v2/tables/{self.table}/records",
-                headers=self.headers,
-                params=params,
-                timeout=30,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            batch = (
-                payload.get("list")
-                or payload.get("records")
-                or payload.get("data")
-                or []
-            )
-            if not isinstance(batch, list):
-                raise ValueError("Unexpected NocoDB response format")
-            rows.extend(batch)
-            if len(batch) < self.page_size:
-                break
-            offset += self.page_size
-        return rows
+
+def _validate_headers(fieldnames: Optional[List[str]], source_file: str) -> None:
+    if not fieldnames:
+        raise ValueError(f"{source_file} has no headers")
+    missing = [header for header in EXPECTED_HEADERS if header not in fieldnames]
+    if missing:
+        missing_list = ", ".join(missing)
+        raise ValueError(f"{source_file} is missing headers: {missing_list}")
+
+
+def _list_csv_files() -> List[Path]:
+    csv_dir = _csv_directory()
+    if not csv_dir.exists():
+        raise ValueError(f"CSV folder not found: {csv_dir}")
+    files = sorted(csv_dir.glob(_csv_glob()))
+    if not files:
+        raise ValueError(f"No CSV files found in {csv_dir}")
+    return files
+
+
+def _format_date(value: Optional[date]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _split_tags(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _normalize_transaction(
+    row: Dict[str, Any], source_file: str, row_index: int
+) -> Dict[str, Any]:
+    row_id = str(row.get("#") or "").strip()
+    if not row_id:
+        row_id = str(row_index)
+
+    booking_date = _format_date(_parse_date(row.get("Date")))
+    value_date = _format_date(_parse_date(row.get("Value Date")))
+    amount = _parse_amount(row.get("Amount"))
+    tags = _split_tags(row.get("Tags"))
+    record_key = f"{source_file}:{row_id}"
+
+    return {
+        "id": row_id,
+        "account": str(row.get("Account") or "").strip(),
+        "booking_date": booking_date,
+        "value_date": value_date,
+        "amount": amount,
+        "currency": str(row.get("Currency") or "").strip(),
+        "name": str(row.get("Name") or "").strip(),
+        "number": str(row.get("Number") or "").strip(),
+        "bank": str(row.get("Bank") or "").strip(),
+        "reason": str(row.get("Reason") or "").strip(),
+        "category": str(row.get("Category") or "").strip(),
+        "subcategory": str(row.get("Subcategory") or "").strip(),
+        "category_path": str(row.get("Category-Path") or "").strip(),
+        "tags": tags,
+        "note": str(row.get("Note") or "").strip(),
+        "posting_text": str(row.get("Posting Text") or "").strip(),
+        "source_file": source_file,
+        "record_key": record_key,
+    }
+
+
+def _load_transactions() -> Tuple[List[Dict[str, Any]], Set[str], int]:
+    transactions: List[Dict[str, Any]] = []
+    keys: Set[str] = set()
+    files = _list_csv_files()
+
+    for file_path in files:
+        with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter=";")
+            _validate_headers(reader.fieldnames, file_path.name)
+            for row_index, row in enumerate(reader, start=1):
+                if not row or not any(value for value in row.values()):
+                    continue
+                transaction = _normalize_transaction(row, file_path.name, row_index)
+                key = transaction["record_key"]
+                if key in keys:
+                    continue
+                keys.add(key)
+                transactions.append(transaction)
+
+    return transactions, keys, len(files)
+
+
+def _ensure_loaded() -> None:
+    if not _DATA_LOADED:
+        _reload_transactions()
+
+
+def _reload_transactions() -> Dict[str, Any]:
+    global _DATA_LOADED, _STORE_METADATA, _TRANSACTION_KEYS, _TRANSACTIONS
+    old_keys = set(_TRANSACTION_KEYS)
+    transactions, keys, file_count = _load_transactions()
+
+    _TRANSACTIONS = transactions
+    _TRANSACTION_KEYS = keys
+    _DATA_LOADED = True
+    _STORE_METADATA = {"files_scanned": file_count}
+
+    return {
+        "files_scanned": file_count,
+        "total_records": len(keys),
+        "new_records": len(keys - old_keys),
+        "removed_records": len(old_keys - keys),
+    }
 
 
 def _row_matches_filters(
     row: Dict[str, Any],
-    fields: FieldMap,
     account: Optional[str],
     iban: Optional[str],
     amount: Optional[float],
@@ -201,10 +284,10 @@ def _row_matches_filters(
     date_start: Optional[date],
     date_end: Optional[date],
 ) -> bool:
-    row_account = _normalize_text(row.get(fields.account))
-    row_iban = _normalize_text(row.get(fields.iban)).replace(" ", "")
-    row_amount = _parse_amount(row.get(fields.amount))
-    row_date = _parse_date(row.get(fields.date))
+    row_account = _normalize_text(row.get("account"))
+    row_iban = _normalize_text(row.get("number")).replace(" ", "")
+    row_amount = _parse_amount(row.get("amount"))
+    row_date = _parse_date(row.get("booking_date"))
 
     if account and account not in row_account:
         return False
@@ -225,17 +308,25 @@ def _row_matches_filters(
     return True
 
 
-def _normalize_row(row: Dict[str, Any], fields: FieldMap) -> Dict[str, Any]:
+def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    description = row.get("reason") or row.get("posting_text") or ""
     return {
-        "id": row.get(fields.row_id),
-        "date": row.get(fields.date),
-        "amount": _parse_amount(row.get(fields.amount)),
-        "currency": row.get(fields.currency),
-        "account": row.get(fields.account),
-        "iban": row.get(fields.iban),
-        "counterparty": row.get(fields.counterparty),
-        "description": row.get(fields.description),
-        "source_table": os.getenv("NOCODB_TABLE"),
+        "id": row.get("id"),
+        "date": row.get("booking_date"),
+        "value_date": row.get("value_date"),
+        "amount": row.get("amount"),
+        "currency": row.get("currency"),
+        "account": row.get("account"),
+        "iban": row.get("number"),
+        "counterparty": row.get("name"),
+        "description": description,
+        "category": row.get("category"),
+        "subcategory": row.get("subcategory"),
+        "category_path": row.get("category_path"),
+        "tags": row.get("tags"),
+        "note": row.get("note"),
+        "posting_text": row.get("posting_text"),
+        "source_file": row.get("source_file"),
     }
 
 
@@ -276,8 +367,7 @@ def search_transactions(
 ) -> Dict[str, Any]:
     """Search transactions with fuzzy matching and optional filters."""
     _require_http_auth()
-    client = NocoDBClient()
-    fields = _load_field_map()
+    _ensure_loaded()
 
     account_norm = _normalize_text(account)
     iban_norm = _normalize_text(iban)
@@ -293,14 +383,12 @@ def search_transactions(
     if date_end and range_end is None:
         raise ValueError("date_end must be ISO format like YYYY-MM-DD")
 
-    rows = client.fetch_rows()
     results: List[Dict[str, Any]] = []
     min_score = _env_float("MCP_MIN_SCORE", 0.55)
 
-    for row in rows:
+    for row in _TRANSACTIONS:
         if not _row_matches_filters(
             row,
-            fields,
             account_norm,
             iban_norm,
             amount,
@@ -314,17 +402,21 @@ def search_transactions(
 
         haystack = " ".join(
             [
-                _normalize_text(row.get(fields.account)),
-                _normalize_text(row.get(fields.iban)),
-                _normalize_text(row.get(fields.description)),
-                _normalize_text(row.get(fields.counterparty)),
+                _normalize_text(row.get("account")),
+                _normalize_text(row.get("number")),
+                _normalize_text(row.get("reason")),
+                _normalize_text(row.get("name")),
+                _normalize_text(row.get("posting_text")),
+                _normalize_text(row.get("category")),
+                _normalize_text(row.get("subcategory")),
+                _normalize_text(row.get("category_path")),
             ]
         )
         score = _similarity(query_norm, haystack)
         if query_norm and score < min_score:
             continue
 
-        normalized = _normalize_row(row, fields)
+        normalized = _normalize_row(row)
         normalized["score"] = round(score, 4)
         results.append(normalized)
 
@@ -356,14 +448,23 @@ def search_transactions(
 
 @mcp.tool()
 def describe_fields() -> Dict[str, Any]:
-    """Return current NocoDB field mapping configuration."""
+    """Return current CSV configuration and expected headers."""
     _require_http_auth()
-    fields = _load_field_map()
+    _ensure_loaded()
     return {
-        "table": os.getenv("NOCODB_TABLE"),
-        "view_id": os.getenv("NOCODB_VIEW_ID"),
-        "field_map": json.loads(json.dumps(fields.__dict__)),
+        "csv_dir": str(_csv_directory()),
+        "csv_glob": _csv_glob(),
+        "expected_headers": list(EXPECTED_HEADERS),
+        "files_scanned": _STORE_METADATA.get("files_scanned", 0),
+        "total_records": len(_TRANSACTIONS),
     }
+
+
+@mcp.tool()
+def reload_transactions() -> Dict[str, Any]:
+    """Reload CSV files and return record statistics."""
+    _require_http_auth()
+    return _reload_transactions()
 
 
 if __name__ == "__main__":

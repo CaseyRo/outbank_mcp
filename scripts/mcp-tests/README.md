@@ -15,4 +15,5 @@ export MCP_AUTH_TOKEN="your-secret-token"
 ./scripts/mcp-tests/02_describe_fields.sh
 ./scripts/mcp-tests/03_search_basic.sh
 ./scripts/mcp-tests/04_search_advanced.sh
+./scripts/mcp-tests/05_reload_transactions.sh
 ```

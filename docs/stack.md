@@ -1,41 +1,32 @@
-# Local Finance Stack
+# Local Finance Workspace
 
 ## Prereqs
-- Docker Desktop or Docker Engine
-- A writable data directory for persistent volumes
+- Python 3.10+
+- `uv` installed
+- A folder containing Outbank CSV exports
 
-## Configure data directory
-Docker Compose reads configuration from `.env`.
+## Configure CSV folder
+The MCP service reads configuration from `.env`.
 
 ```bash
 cp .env.example .env
 ```
 
-Set `DATA_DIR` to the host path where data should live:
-- Local workstation: `/Volumes/data`
-- Container host: `/mnt/data`
+Set `OUTBANK_CSV_DIR` to the folder containing your CSV exports. Optional:
+- `OUTBANK_CSV_GLOB` to customize the file pattern (default `*.csv`)
+- `MCP_PORT` to change the HTTP port
 
-If you want non-default credentials, also set:
-- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-- `MCP_PORT` (optional)
-- `NOCODB_TOKEN` (if your NocoDB instance requires auth)
-
-## Start services
+## Install dependencies
 ```bash
-docker compose up -d
+uv venv
+uv pip install -r services/finance-mcp/requirements.txt
 ```
 
-Services:
-- Postgres: `localhost:5432`
-- NocoDB: `http://localhost:8080`
-- Metabase: `http://localhost:3000`
-- Finance MCP: `http://localhost:${MCP_PORT:-6668}`
+## Run the MCP service
+```bash
+uv run python services/finance-mcp/app.py
+```
 
 ## MCP query service
 The MCP query service provides read-only, fuzzy transaction search for LLM
 tools. See `docs/mcp.md` for environment variables and examples.
-
-## Initialize schema
-```bash
-psql postgresql://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD:-finance}@localhost:5432/${POSTGRES_DB:-finance} -f db/schema.sql
-```
