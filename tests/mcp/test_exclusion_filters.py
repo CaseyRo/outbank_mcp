@@ -15,7 +15,17 @@ See README.md "Configuration" section for user-facing documentation.
 
 import json
 
+from exclusion_filters import (
+    env_exclusion_list,
+    matches_exclusion,
+    should_exclude_transaction,
+)
 from tests.mcp.conftest import StdioMCPClient
+
+# Use the module-level functions directly (no underscore prefix)
+_env_exclusion_list = env_exclusion_list
+_matches_exclusion = matches_exclusion
+_should_exclude_transaction = should_exclude_transaction
 
 
 class TestExclusionFilterLogic:
@@ -27,8 +37,6 @@ class TestExclusionFilterLogic:
 
     def test_env_exclusion_list_empty(self, monkeypatch):
         """Test parsing empty exclusion list."""
-        from app import _env_exclusion_list
-
         monkeypatch.delenv("EXCLUDED_CATEGORIES", raising=False)
         result = _env_exclusion_list("EXCLUDED_CATEGORIES")
         assert result == []
@@ -39,61 +47,45 @@ class TestExclusionFilterLogic:
 
     def test_env_exclusion_list_single_value(self, monkeypatch):
         """Test parsing single exclusion value."""
-        from app import _env_exclusion_list
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer")
         result = _env_exclusion_list("EXCLUDED_CATEGORIES")
         assert result == ["transfer"]
 
     def test_env_exclusion_list_multiple_values(self, monkeypatch):
         """Test parsing multiple exclusion values."""
-        from app import _env_exclusion_list
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer,Internal,Reconciliation")
         result = _env_exclusion_list("EXCLUDED_CATEGORIES")
         assert result == ["transfer", "internal", "reconciliation"]
 
     def test_env_exclusion_list_whitespace_handling(self, monkeypatch):
         """Test exclusion list handles whitespace correctly."""
-        from app import _env_exclusion_list
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", " Transfer , Internal , Reconciliation ")
         result = _env_exclusion_list("EXCLUDED_CATEGORIES")
         assert result == ["transfer", "internal", "reconciliation"]
 
     def test_matches_exclusion_empty_list(self):
         """Test matching with empty exclusion list."""
-        from app import _matches_exclusion
-
         assert _matches_exclusion("Transfer", []) is False
 
     def test_matches_exclusion_case_insensitive(self):
         """Test exclusion matching is case-insensitive."""
-        from app import _matches_exclusion
-
         assert _matches_exclusion("Transfer", ["transfer"]) is True
         assert _matches_exclusion("TRANSFER", ["transfer"]) is True
         assert _matches_exclusion("transfer", ["Transfer"]) is True
 
     def test_matches_exclusion_partial_match(self):
         """Test exclusion matching supports partial matches."""
-        from app import _matches_exclusion
-
         assert _matches_exclusion("internal-transfer", ["transfer"]) is True
         assert _matches_exclusion("transfer-internal", ["transfer"]) is True
         assert _matches_exclusion("some-transfer-thing", ["transfer"]) is True
 
     def test_matches_exclusion_exact_match(self):
         """Test exclusion matching works with exact matches."""
-        from app import _matches_exclusion
-
         assert _matches_exclusion("transfer", ["transfer"]) is True
         assert _matches_exclusion("Transfer", ["transfer"]) is True
 
     def test_should_exclude_transaction_by_category(self, monkeypatch):
         """Test transaction exclusion by category."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer")
         transaction = {"category": "Transfer", "tags": []}
         assert _should_exclude_transaction(transaction) is True
@@ -103,8 +95,6 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_by_subcategory(self, monkeypatch):
         """Test transaction exclusion by subcategory."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer")
         # Transaction with Transfer in subcategory should be excluded
         transaction = {"category": "Finances & Insurances", "subcategory": "Transfer", "tags": []}
@@ -116,8 +106,6 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_by_category_path(self, monkeypatch):
         """Test transaction exclusion by category_path."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer")
         # Transaction with Transfer in category_path should be excluded
         transaction = {
@@ -139,8 +127,6 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_by_tag(self, monkeypatch):
         """Test transaction exclusion by tag."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_TAGS", "transfer")
         transaction = {"category": "Other", "tags": ["transfer"]}
         assert _should_exclude_transaction(transaction) is True
@@ -150,16 +136,12 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_partial_tag_match(self, monkeypatch):
         """Test transaction exclusion with partial tag match."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_TAGS", "transfer")
         transaction = {"category": "Other", "tags": ["internal-transfer"]}
         assert _should_exclude_transaction(transaction) is True
 
     def test_should_exclude_transaction_case_insensitive(self, monkeypatch):
         """Test transaction exclusion is case-insensitive."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "transfer")
         transaction = {"category": "Transfer", "tags": []}
         assert _should_exclude_transaction(transaction) is True
@@ -170,8 +152,6 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_multiple_exclusions(self, monkeypatch):
         """Test transaction exclusion with multiple exclusion values."""
-        from app import _should_exclude_transaction
-
         monkeypatch.setenv("EXCLUDED_CATEGORIES", "Transfer,Internal")
         transaction = {"category": "Transfer", "tags": []}
         assert _should_exclude_transaction(transaction) is True
@@ -184,8 +164,6 @@ class TestExclusionFilterLogic:
 
     def test_should_exclude_transaction_no_exclusions(self, monkeypatch):
         """Test transaction exclusion with no exclusions configured."""
-        from app import _should_exclude_transaction
-
         monkeypatch.delenv("EXCLUDED_CATEGORIES", raising=False)
         monkeypatch.delenv("EXCLUDED_TAGS", raising=False)
         transaction = {"category": "Transfer", "tags": ["transfer"]}

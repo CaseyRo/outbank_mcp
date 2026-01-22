@@ -12,12 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **BREAKING**: Upgraded to FastMCP 3.0.0b1 (requires fastmcp>=3.0.0b1,<4.0.0)
 - Updated security documentation with scopes-based auth as future improvement
+- Extracted exclusion filter functions to `exclusion_filters.py` module
 
 ### Technical Notes
 - v3's `AuthMiddleware` with `require_auth` is designed for OAuth/JWT tokens
 - Custom `HTTPAuthMiddleware` retained for simple bearer token validation
 - All existing middleware (rate limiting, request size, audit logging) compatible with v3
 - All imports and middleware patterns verified compatible with FastMCP 3.0
+- Exclusion filters extracted to avoid Python 3.14 import chain issues in tests
 
 ## [0.9.0] - 2026-01-21
 

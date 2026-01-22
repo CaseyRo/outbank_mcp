@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from exclusion_filters import (
+    env_exclusion_list,
+    env_exclusion_list_display,
+    matches_exclusion,
+    should_exclude_transaction,
+)
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -18,6 +24,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+# Re-export for backwards compatibility
+_env_exclusion_list = env_exclusion_list
+_env_exclusion_list_display = env_exclusion_list_display
+_matches_exclusion = matches_exclusion
+_should_exclude_transaction = should_exclude_transaction
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -53,47 +65,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _env_exclusion_list(name: str) -> list[str]:
-    """Parse a comma-separated exclusion list from environment variable.
-
-    Returns a list of normalized (lowercase, stripped) exclusion values.
-    Empty strings and whitespace-only values are filtered out.
-
-    This function returns normalized values for matching purposes.
-    Use _env_exclusion_list_display() to get original case-preserved values for display.
-    """
-    value = os.getenv(name)
-    if not value:
-        return []
-    return [item.strip().lower() for item in value.split(",") if item.strip()]
-
-
-def _env_exclusion_list_display(name: str) -> list[str]:
-    """Parse a comma-separated exclusion list from environment variable for display.
-
-    Returns a list of original case-preserved (but trimmed) exclusion values.
-    Empty strings and whitespace-only values are filtered out.
-
-    This function preserves the original case as entered by the user for display purposes.
-    """
-    value = os.getenv(name)
-    if not value:
-        return []
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _matches_exclusion(value: str, exclusion_list: list[str]) -> bool:
-    """Check if a value matches any exclusion in the list.
-
-    Matching is case-insensitive and supports partial matches.
-    Returns True if the value contains any exclusion string.
-    """
-    if not exclusion_list:
-        return False
-    normalized_value = value.lower()
-    # Normalize exclusion list items to lowercase for case-insensitive matching
-    normalized_exclusions = [exclusion.lower() for exclusion in exclusion_list]
-    return any(exclusion in normalized_value for exclusion in normalized_exclusions)
 
 
 def _env_rate_limit() -> float | None:
@@ -436,47 +407,6 @@ def _normalize_transaction(row: dict[str, Any], source_file: str, row_index: int
     }
 
 
-def _should_exclude_transaction(transaction: dict[str, Any]) -> bool:
-    """Check if a transaction should be excluded based on category or tag filters.
-
-    A transaction is excluded if:
-    - Its category, subcategory, or category_path matches any value in EXCLUDED_CATEGORIES, OR
-    - Any of its tags matches any value in EXCLUDED_TAGS
-
-    Matching is case-insensitive and supports partial matches (e.g., "transfer"
-    matches "internal-transfer" or "Finances & Insurances / Transfer").
-
-    Args:
-        transaction: Normalized transaction dictionary with 'category', 'subcategory',
-                     'category_path', and 'tags' fields
-
-    Returns:
-        True if the transaction should be excluded, False otherwise
-    """
-    excluded_categories = _env_exclusion_list("EXCLUDED_CATEGORIES")
-    excluded_tags = _env_exclusion_list("EXCLUDED_TAGS")
-
-    # Check category exclusion - check category, subcategory, and category_path
-    if excluded_categories:
-        category = transaction.get("category", "")
-        subcategory = transaction.get("subcategory", "")
-        category_path = transaction.get("category_path", "")
-
-        if category and _matches_exclusion(category, excluded_categories):
-            return True
-        if subcategory and _matches_exclusion(subcategory, excluded_categories):
-            return True
-        if category_path and _matches_exclusion(category_path, excluded_categories):
-            return True
-
-    # Check tag exclusion
-    tags = transaction.get("tags", [])
-    if tags:
-        for tag in tags:
-            if _matches_exclusion(tag, excluded_tags):
-                return True
-
-    return False
 
 
 def _load_transactions() -> tuple[list[dict[str, Any]], set[str], int, int, int]:
