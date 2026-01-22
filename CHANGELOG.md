@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-22
+
+### Changed
+- **BREAKING**: Upgraded to FastMCP 3.0.0b1 (requires fastmcp>=3.0.0b1,<4.0.0)
+- Updated security documentation with scopes-based auth as future improvement
+
+### Technical Notes
+- v3's `AuthMiddleware` with `require_auth` is designed for OAuth/JWT tokens
+- Custom `HTTPAuthMiddleware` retained for simple bearer token validation
+- All existing middleware (rate limiting, request size, audit logging) compatible with v3
+- All imports and middleware patterns verified compatible with FastMCP 3.0
+
 ## [0.9.0] - 2026-01-21
 
 ### Added
@@ -34,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker support with docker-compose
 - Comprehensive test suite (pytest, BDD scenarios)
 
-[Unreleased]: https://github.com/user/mcp_outbank/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/user/mcp_outbank/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/user/mcp_outbank/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/user/mcp_outbank/compare/v0.1.0...v0.9.0
 [0.1.0]: https://github.com/user/mcp_outbank/releases/tag/v0.1.0

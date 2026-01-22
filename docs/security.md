@@ -111,3 +111,6 @@ could be considered for multi-user or production scenarios:
 - **Per-user tokens**: Support multiple tokens with individual audit trails
 - **OAuth 2.0 integration**: Full OAuth flow with refresh tokens
 - **Rate limiting per token**: Individual rate limits based on token identity
+- **Scopes-based authorization**: Use FastMCP v3's `require_scopes()` for fine-grained tool permissions (e.g., `read:transactions`, `admin:reload`)
+- **User identity tracking**: Extract user info from tokens via custom `AuthContext` for enhanced audit logging
+- **Role-based access control**: Different permission levels for read-only vs admin users
