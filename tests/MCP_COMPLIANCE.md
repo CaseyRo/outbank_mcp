@@ -4,7 +4,7 @@ This document verifies that our test suite is compliant with OpenAI's MCP specif
 
 ## ✅ JSON-RPC 2.0 Format
 
-**Requirement**: All requests must use JSON-RPC 2.0 format  
+**Requirement**: All requests must use JSON-RPC 2.0 format
 **Status**: ✅ Compliant
 
 Our tests send requests in the correct format:
@@ -19,7 +19,7 @@ Our tests send requests in the correct format:
 
 ## ✅ tools/list Method
 
-**Requirement**: `{"method": "tools/list", "params": {}}`  
+**Requirement**: `{"method": "tools/list", "params": {}}`
 **Status**: ✅ Compliant
 
 - ✅ Tests send `params: {}` (empty dict, not omitted)
@@ -28,7 +28,7 @@ Our tests send requests in the correct format:
 
 ## ✅ tools/call Method
 
-**Requirement**: `{"method": "tools/call", "params": {"name": "...", "arguments": {...}}}`  
+**Requirement**: `{"method": "tools/call", "params": {"name": "...", "arguments": {...}}}`
 **Status**: ✅ Compliant
 
 - ✅ Tests use correct params structure with `name` and `arguments`
@@ -37,7 +37,7 @@ Our tests send requests in the correct format:
 
 ## ✅ Response Format
 
-**Requirement**: Responses must follow JSON-RPC 2.0 format with `result` or `error` fields  
+**Requirement**: Responses must follow JSON-RPC 2.0 format with `result` or `error` fields
 **Status**: ✅ Compliant
 
 - ✅ Tests verify `result` field exists
@@ -62,7 +62,7 @@ Our tests send requests in the correct format:
 
 ## ✅ Stdio Transport
 
-**Requirement**: Stdio transport requires initialization handshake  
+**Requirement**: Stdio transport requires initialization handshake
 **Status**: ✅ Compliant (after fixes)
 
 - ✅ Tests perform `initialize` request first
@@ -72,7 +72,7 @@ Our tests send requests in the correct format:
 
 ## ✅ HTTP Transport
 
-**Requirement**: HTTP requests must include proper headers  
+**Requirement**: HTTP requests must include proper headers
 **Status**: ✅ Compliant (after fixes)
 
 - ✅ Tests include `Content-Type: application/json`
@@ -83,7 +83,7 @@ Our tests send requests in the correct format:
 
 ## ✅ Error Handling
 
-**Requirement**: Errors must follow JSON-RPC error format  
+**Requirement**: Errors must follow JSON-RPC error format
 **Status**: ✅ Compliant
 
 - ✅ Tests verify error responses contain `error` field

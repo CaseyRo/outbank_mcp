@@ -21,11 +21,11 @@ These tests verify that the MCP server works correctly regardless of transport m
    ```bash
    # In a separate terminal, start the server:
    MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=6668 uv run python app.py
-   
+
    # Then run tests in another terminal
    uv run pytest tests/mcp/test_simple_queries.py::TestHttpSimpleQueries
    ```
-   
+
    **Note**: If the server is not running, HTTP tests will fail with connection errors or 406 errors. The tests will skip automatically if the server is unreachable.
 
 4. Ensure sample CSV data is available (tests will work with empty data but may have fewer assertions)

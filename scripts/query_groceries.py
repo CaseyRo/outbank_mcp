@@ -97,17 +97,17 @@ class MCPClient:
                         headers=headers_with_session,
                         timeout=10,
                     )
-                except:
+                except Exception:
                     pass
 
             self._initialized = True
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
             raise RuntimeError(
                 f"Cannot connect to MCP server at {self.url}. Is the server running?"
-            )
+            ) from e
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
-                raise RuntimeError("Authentication failed. Check MCP_HTTP_AUTH_TOKEN.")
+                raise RuntimeError("Authentication failed. Check MCP_HTTP_AUTH_TOKEN.") from e
             raise
 
     def send_request(self, method: str, params: dict | None = None) -> dict:

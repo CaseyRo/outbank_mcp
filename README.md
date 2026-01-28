@@ -11,18 +11,18 @@ handled, exported, stored, and shared. Prefer local models over big-tech hosted
 LLMs whenever possible. If you do use an external model, using an MCP to query
 your local data is safer than uploading raw CSV exports repeatedly.
 
-> ⚠️ 🔒 🚫 **Local-only warning**  
-> This project is intended for local-only use.  
-> Exposing the MCP service publicly is out of scope and entirely at your own risk.  
+> ⚠️ 🔒 🚫 **Local-only warning**
+> This project is intended for local-only use.
+> Exposing the MCP service publicly is out of scope and entirely at your own risk.
 > See `docs/security.md` for recommended local-only setup and mandatory HTTP auth requirements.
 
-> 🚨 **Security: Impersonation Warning**  
-> **NEVER share credentials or CSV files with anyone claiming to be a contributor or maintainer of this project.**  
+> 🚨 **Security: Impersonation Warning**
+> **NEVER share credentials or CSV files with anyone claiming to be a contributor or maintainer of this project.**
 > Contributors and maintainers of this project will **NEVER** ask you for:
 > - Your credentials (passwords, API keys, tokens)
 > - Your CSV export files
 > - Access to your financial data
-> 
+>
 > If someone asks for these, they are impersonating us. Report them and do not comply.
 
 ## What is here

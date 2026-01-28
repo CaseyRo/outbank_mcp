@@ -10,12 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from exclusion_filters import (
-    env_exclusion_list,
-    env_exclusion_list_display,
-    matches_exclusion,
-    should_exclude_transaction,
-)
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -24,6 +18,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+from exclusion_filters import (
+    env_exclusion_list,
+    env_exclusion_list_display,
+    matches_exclusion,
+    should_exclude_transaction,
+)
 
 # Re-export for backwards compatibility
 _env_exclusion_list = env_exclusion_list
@@ -63,8 +64,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 
 
 def _env_rate_limit() -> float | None:
@@ -405,8 +404,6 @@ def _normalize_transaction(row: dict[str, Any], source_file: str, row_index: int
         "source_file": source_file,
         "record_key": record_key,
     }
-
-
 
 
 def _load_transactions() -> tuple[list[dict[str, Any]], set[str], int, int, int]:
