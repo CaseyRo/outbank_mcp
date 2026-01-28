@@ -32,6 +32,11 @@ markers = [
     "http_only: HTTP transport only tests",
     "integration: integration workflow tests",
 ]
+filterwarnings = [
+    # gherkin-official 29.x has deprecation warning, pytest-bdd pins <30.0.0
+    # See: https://github.com/pytest-dev/pytest-bdd/issues/779
+    "ignore:'maxsplit' is passed as positional argument:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py310"
