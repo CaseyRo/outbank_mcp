@@ -251,6 +251,10 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
+### Opsx / OpenSpec commands
+
+Opsx commands and skills live in **`.cursor/commands/`** and **`.cursor/skills/`** (single source of truth). For Claude IDE, copy or symlink from there into `.claude/commands/opsx/` and `.claude/skills/` if needed (e.g. `opsx-apply.md` → `.claude/commands/opsx/apply.md`).
+
 ## Open source projects used here
 - FastMCP: https://github.com/jlowin/fastmcp
 - Python: https://www.python.org/

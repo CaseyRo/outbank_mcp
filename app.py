@@ -20,17 +20,9 @@ from rich.table import Table
 from rich.text import Text
 
 from exclusion_filters import (
-    env_exclusion_list,
     env_exclusion_list_display,
-    matches_exclusion,
     should_exclude_transaction,
 )
-
-# Re-export for backwards compatibility
-_env_exclusion_list = env_exclusion_list
-_env_exclusion_list_display = env_exclusion_list_display
-_matches_exclusion = matches_exclusion
-_should_exclude_transaction = should_exclude_transaction
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -429,7 +421,7 @@ def _load_transactions() -> tuple[list[dict[str, Any]], set[str], int, int, int]
                 total_parsed += 1
 
                 # Apply exclusion filters
-                if _should_exclude_transaction(transaction):
+                if should_exclude_transaction(transaction):
                     excluded_count += 1
                     continue
 
@@ -716,6 +708,22 @@ def search_transactions(
     if date_end and range_end is None:
         raise ValueError("date_end must be ISO format like YYYY-MM-DD")
 
+    # Validate conflicting date filters
+    if date_exact is not None and (range_start is not None or range_end is not None):
+        raise ValueError("Cannot use 'date' filter together with 'date_start' or 'date_end'")
+
+    # Validate date range
+    if range_start is not None and range_end is not None and range_start > range_end:
+        raise ValueError("date_start must be less than or equal to date_end")
+
+    # Validate conflicting amount filters
+    if amount is not None and (amount_min is not None or amount_max is not None):
+        raise ValueError("Cannot use 'amount' filter together with 'amount_min' or 'amount_max'")
+
+    # Validate amount range
+    if amount_min is not None and amount_max is not None and amount_min > amount_max:
+        raise ValueError("amount_min must be less than or equal to amount_max")
+
     results: list[dict[str, Any]] = []
     min_score = _env_float("MCP_MIN_SCORE", 0.55)
 
@@ -925,8 +933,8 @@ def _display_startup_info() -> None:
     csv_dir = _csv_directory()
     csv_glob = _csv_glob()
     # Use display version to preserve original case for user-friendly output
-    excluded_categories_display = _env_exclusion_list_display("EXCLUDED_CATEGORIES")
-    excluded_tags_display = _env_exclusion_list_display("EXCLUDED_TAGS")
+    excluded_categories_display = env_exclusion_list_display("EXCLUDED_CATEGORIES")
+    excluded_tags_display = env_exclusion_list_display("EXCLUDED_TAGS")
 
     # Create info table
     table = Table(show_header=False, box=None, padding=(0, 1))

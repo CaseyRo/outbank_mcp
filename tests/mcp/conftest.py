@@ -2,6 +2,7 @@
 
 import json
 import os
+import socket
 import subprocess
 import time
 from collections.abc import Iterator
@@ -10,6 +11,16 @@ from typing import Any
 
 import pytest
 import requests
+
+# Token used by the managed HTTP server; must match server env.
+_TEST_HTTP_AUTH_TOKEN = "test-token-12345678"
+
+
+def _pick_free_port() -> int:
+    """Bind to port 0 and return the assigned port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 class StdioMCPClient:
@@ -300,10 +311,69 @@ class HttpMCPClient:
             )
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Run stdio tests first, then HTTP tests (so HTTP server starts only when needed)."""
+
+    def order_key(item: pytest.Item) -> tuple[int, str]:
+        fixturenames = getattr(item, "fixturenames", ())
+        uses_http = any(
+            f in fixturenames
+            for f in ("http_client", "http_client_with_auth", "http_client_no_auth")
+        )
+        return (1 if uses_http else 0, item.nodeid)
+
+    items.sort(key=order_key)
+
+
 @pytest.fixture
 def app_path() -> str:
     """Return path to app.py."""
     return str(Path(__file__).parent.parent.parent / "app.py")
+
+
+@pytest.fixture(scope="session")
+def mcp_http_server() -> Iterator[str]:
+    """Start MCP server in HTTP mode on a free port; yield MCP URL. Stopped after session."""
+    app_path = str(Path(__file__).parent.parent.parent / "app.py")
+    port = _pick_free_port()
+    url = f"http://127.0.0.1:{port}/mcp"
+    env = os.environ.copy()
+    env.update(
+        {
+            "MCP_TRANSPORT": "http",
+            "MCP_HOST": "127.0.0.1",
+            "MCP_PORT": str(port),
+            "MCP_HTTP_AUTH_TOKEN": _TEST_HTTP_AUTH_TOKEN,
+        }
+    )
+    proc = subprocess.Popen(
+        ["uv", "run", "python", app_path],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        # Wait until server responds (root may 404; any response means server is up)
+        for _ in range(30):
+            try:
+                requests.get(f"http://127.0.0.1:{port}/", timeout=1)
+                break
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                time.sleep(0.2)
+        else:
+            proc.terminate()
+            proc.wait(timeout=5)
+            raise RuntimeError("HTTP server did not become ready in time")
+        yield url
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 @pytest.fixture
@@ -320,84 +390,21 @@ def stdio_client(app_path: str) -> Iterator[StdioMCPClient]:
 
 
 @pytest.fixture
-def http_client() -> HttpMCPClient:
-    """Fixture providing HTTP MCP client with auth token (auth is mandatory for HTTP transport).
-
-    Note: HTTP tests require a running server. Start with:
-    MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=6668 MCP_HTTP_AUTH_TOKEN=test-token-12345678 uv run python app.py
-
-    The token is read from TEST_MCP_AUTH_TOKEN or MCP_HTTP_AUTH_TOKEN environment variables.
-    If authentication fails, tests will be skipped with a helpful message.
-    """
-    # Check if .env should be loaded (tests might not load it automatically)
-    from dotenv import load_dotenv
-
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-
-    # Use TEST_MCP_AUTH_TOKEN if set, otherwise fall back to MCP_HTTP_AUTH_TOKEN (what server uses)
-    test_token = os.getenv("TEST_MCP_AUTH_TOKEN")
-    server_token = os.getenv("MCP_HTTP_AUTH_TOKEN")
-    token = test_token or server_token or "test-token-12345678"
-
-    client = HttpMCPClient(auth_token=token)
-    # Check if server is available and auth works
-    try:
-        import requests
-
-        # Try to reach the root to see if server is running
-        base_url = client.url.rsplit("/mcp", 1)[0]
-        test_response = requests.get(base_url, timeout=2)
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-        pytest.skip(
-            "HTTP server not running. Start with: "
-            "MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=6668 "
-            "MCP_HTTP_AUTH_TOKEN=test-token-12345678 uv run python app.py"
-        )
-    except Exception:
-        # Server might be running but not responding to GET - that's OK
-        pass
-
-    # Verify authentication works by trying a simple request
-    try:
-        test_response = client.send_request("tools/list")
-        if "error" in test_response and "Unauthorized" in str(
-            test_response.get("error", {}).get("message", "")
-        ):
-            pytest.skip(
-                f"Authentication failed. Server token doesn't match test token. "
-                f"Set TEST_MCP_AUTH_TOKEN or MCP_HTTP_AUTH_TOKEN to match the server's token. "
-                f"Current test token: {token[:8]}..."
-            )
-    except Exception:
-        # If we can't test auth, continue anyway - the test will fail with a clearer error
-        pass
-
-    return client
+def http_client(mcp_http_server: str) -> HttpMCPClient:
+    """HTTP MCP client using the session-started server (auth token matches server)."""
+    return HttpMCPClient(url=mcp_http_server, auth_token=_TEST_HTTP_AUTH_TOKEN)
 
 
 @pytest.fixture
-def http_client_with_auth() -> HttpMCPClient:
-    """Fixture providing HTTP MCP client with auth token (same as http_client since auth is mandatory)."""
-    # Ensure .env is loaded so we get the same token as the server
-    from dotenv import load_dotenv
-
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-
-    # Use TEST_MCP_AUTH_TOKEN if set, otherwise fall back to MCP_HTTP_AUTH_TOKEN (what server uses)
-    token = os.getenv("TEST_MCP_AUTH_TOKEN") or os.getenv(
-        "MCP_HTTP_AUTH_TOKEN", "test-token-12345678"
-    )
-    return HttpMCPClient(auth_token=token)
+def http_client_with_auth(mcp_http_server: str) -> HttpMCPClient:
+    """HTTP MCP client with auth token (same as http_client; auth is mandatory for HTTP)."""
+    return HttpMCPClient(url=mcp_http_server, auth_token=_TEST_HTTP_AUTH_TOKEN)
 
 
 @pytest.fixture
-def http_client_no_auth() -> HttpMCPClient:
-    """Fixture providing HTTP MCP client without auth token (for testing auth failures)."""
-    return HttpMCPClient(auth_token=None)
+def http_client_no_auth(mcp_http_server: str) -> HttpMCPClient:
+    """HTTP MCP client without auth token (for testing auth failures)."""
+    return HttpMCPClient(url=mcp_http_server, auth_token=None)
 
 
 @pytest.fixture
