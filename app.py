@@ -1,4 +1,5 @@
 import csv
+import hmac
 import json
 import logging
 import os
@@ -199,32 +200,6 @@ def _audit_log(tool_name: str, parameters: dict[str, Any], client_ip: str | None
         entry["client_ip"] = client_ip
 
     logger.info(json.dumps(entry, default=str))
-
-
-def _require_http_auth() -> None:
-    """Require HTTP authentication for all HTTP transport requests.
-
-    This function is called from MCP tools when HTTP transport is used.
-    Authentication is mandatory for HTTP transport - stdio transport
-    does not call this function.
-    """
-    try:
-        headers = get_http_headers()
-    except Exception:
-        # If we can't get headers (e.g., not HTTP transport), skip auth check
-        return
-    if headers is None or not headers:
-        # No headers means not HTTP transport (stdio mode), skip auth check
-        return
-    auth_header = headers.get("authorization") or headers.get("Authorization") or ""
-    scheme, _, provided = auth_header.partition(" ")
-    if scheme.lower() != "bearer" or not provided.strip():
-        raise PermissionError("Unauthorized")
-    expected = os.getenv("MCP_HTTP_AUTH_TOKEN", "").strip()
-    if not expected:
-        raise PermissionError("Unauthorized: MCP_HTTP_AUTH_TOKEN not set")
-    if provided.strip() != expected:
-        raise PermissionError("Unauthorized")
 
 
 def _parse_amount(value: Any) -> float | None:
@@ -544,21 +519,18 @@ class HTTPAuthMiddleware(Middleware):
     Only applies to HTTP transport - stdio transport bypasses this.
     """
 
-    async def __call__(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
+    async def on_request(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
         """Check authentication before processing any request."""
-        # Check if we're using HTTP transport by trying to get headers
-        try:
-            headers = get_http_headers()
-        except Exception:
-            # No headers available - likely stdio transport, allow it
-            return await call_next(context)
+        # get_http_headers strips authorization by default (FastMCP 3.0.2+);
+        # explicitly include it so we can validate the bearer token.
+        headers = get_http_headers(include={"authorization"})
 
-        if headers is None or not headers:
+        if not headers:
             # No headers - likely stdio transport, allow it
             return await call_next(context)
 
         # We have headers, so we're in HTTP mode - require auth
-        auth_header = headers.get("authorization") or headers.get("Authorization") or ""
+        auth_header = headers.get("authorization", "")
         scheme, _, provided = auth_header.partition(" ")
         if scheme.lower() != "bearer" or not provided.strip():
             raise PermissionError("Unauthorized: Missing or invalid bearer token")
@@ -567,7 +539,7 @@ class HTTPAuthMiddleware(Middleware):
         if not expected:
             raise PermissionError("Unauthorized: MCP_HTTP_AUTH_TOKEN not configured")
 
-        if provided.strip() != expected:
+        if not hmac.compare_digest(provided.strip(), expected):
             raise PermissionError("Unauthorized: Invalid bearer token")
 
         return await call_next(context)
@@ -583,18 +555,16 @@ class RequestSizeLimitMiddleware(Middleware):
         """Initialize with max request size in bytes (default 1MB)."""
         self.max_size = max_size
 
-    async def __call__(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
+    async def on_request(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
         """Check request size before processing."""
-        try:
-            headers = get_http_headers()
-        except Exception:
+        # content-length is stripped by default (FastMCP 3.0.2+); include it.
+        headers = get_http_headers(include={"content-length"})
+
+        if not headers:
             return await call_next(context)
 
-        if headers is None or not headers:
-            return await call_next(context)
-
-        # Check Content-Length header
-        content_length = headers.get("content-length") or headers.get("Content-Length")
+        # Check Content-Length header (normalized to lowercase by FastMCP)
+        content_length = headers.get("content-length")
         if content_length:
             try:
                 size = int(content_length)
@@ -611,36 +581,25 @@ class RequestSizeLimitMiddleware(Middleware):
 
 
 class AuditLoggingMiddleware(Middleware):
-    """Middleware to log all tool invocations for audit trail."""
+    """Middleware to log tool invocations for audit trail."""
 
-    async def __call__(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
+    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: Any) -> Any:
         """Log tool invocation and execute."""
         # Get client IP if available (HTTP transport)
         client_ip = None
-        try:
-            headers = get_http_headers()
-            if headers:
-                # Try common headers for client IP
-                client_ip = (
-                    headers.get("x-forwarded-for")
-                    or headers.get("X-Forwarded-For")
-                    or headers.get("x-real-ip")
-                    or headers.get("X-Real-IP")
-                )
-                if client_ip:
-                    # Take first IP if comma-separated
-                    client_ip = client_ip.split(",")[0].strip()
-        except Exception:
-            pass
+        headers = get_http_headers(include={"x-forwarded-for", "x-real-ip"})
+        if headers:
+            # Headers are normalized to lowercase by FastMCP 3.0.2+
+            raw_ip = headers.get("x-forwarded-for") or headers.get("x-real-ip")
+            if raw_ip:
+                client_ip = raw_ip.split(",")[0].strip()
 
-        # Extract tool name and arguments from context
-        tool_name = getattr(context, "tool_name", None) or getattr(context, "name", "unknown")
-        arguments = getattr(context, "arguments", {}) or {}
+        # on_call_tool context.message has .name and .arguments
+        tool_name = getattr(context.message, "name", "unknown")
+        arguments = getattr(context.message, "arguments", {}) or {}
 
-        # Log before execution
         _audit_log(tool_name, arguments, client_ip)
 
-        # Execute the tool
         return await call_next(context)
 
 
@@ -667,7 +626,7 @@ if _transport_env == "http":
 mcp = FastMCP("finance-mcp", middleware=_http_middlewares)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 def search_transactions(
     query: str | None = None,
     account: str | None = None,
@@ -688,11 +647,14 @@ def search_transactions(
     - account, iban: string filters
     - amount, amount_min, amount_max: numeric filters
     - date, date_start, date_end: ISO dates (YYYY-MM-DD)
-    - max_results: limit for returned results (default 25)
+    - max_results: limit for returned results (default 25, max 500)
     - sort: -date, date, -amount, amount
     """
-    _require_http_auth()
     _ensure_loaded()
+
+    # Guard against CPU amplification via long queries (SequenceMatcher is O(N*M))
+    if query and len(query) > 500:
+        raise ValueError("query must be 500 characters or fewer")
 
     account_norm = _normalize_text(account)
     iban_norm = _normalize_text(iban)
@@ -762,7 +724,8 @@ def search_transactions(
         results.append(normalized)
 
     sorted_results = _apply_sort(results, sort)
-    limited = sorted_results[: max(1, max_results)]
+    capped = min(max(1, max_results), 500)
+    limited = sorted_results[:capped]
 
     return {
         "filters": {
@@ -787,10 +750,115 @@ def search_transactions(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+def aggregate_transactions(
+    group_by: str = "category",
+    account: str | None = None,
+    iban: str | None = None,
+    amount_min: float | None = None,
+    amount_max: float | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
+) -> dict[str, Any]:
+    """Aggregate transactions into groups with totals, counts, and averages.
+
+    Returns spending breakdown without returning individual transactions.
+    Ideal for budget analysis, period comparisons, and spending summaries.
+
+    - group_by: "category", "subcategory", "counterparty", "month", or "account"
+    - account, iban: string filters (same as search_transactions)
+    - amount_min, amount_max: numeric filters
+    - date_start, date_end: ISO dates (YYYY-MM-DD) to restrict the period
+    """
+    _ensure_loaded()
+
+    valid_groups = {"category", "subcategory", "counterparty", "month", "account"}
+    if group_by not in valid_groups:
+        raise ValueError(f"group_by must be one of: {', '.join(sorted(valid_groups))}")
+
+    account_norm = _normalize_text(account)
+    iban_norm = _normalize_text(iban)
+
+    range_start = _parse_date(date_start)
+    range_end = _parse_date(date_end)
+    if date_start and range_start is None:
+        raise ValueError("date_start must be ISO format like YYYY-MM-DD")
+    if date_end and range_end is None:
+        raise ValueError("date_end must be ISO format like YYYY-MM-DD")
+    if range_start is not None and range_end is not None and range_start > range_end:
+        raise ValueError("date_start must be less than or equal to date_end")
+    if amount_min is not None and amount_max is not None and amount_min > amount_max:
+        raise ValueError("amount_min must be less than or equal to amount_max")
+
+    # Aggregate into buckets
+    buckets: dict[str, list[float]] = {}
+    total_matched = 0
+
+    for row in _TRANSACTIONS:
+        if not _row_matches_filters(
+            row, account_norm, iban_norm, None, amount_min, amount_max, None, range_start, range_end
+        ):
+            continue
+
+        total_matched += 1
+        row_amount = _parse_amount(row.get("amount")) or 0.0
+
+        # Determine the group key
+        if group_by == "category":
+            key = row.get("category") or "Uncategorized"
+        elif group_by == "subcategory":
+            key = row.get("category_path") or row.get("category") or "Uncategorized"
+        elif group_by == "counterparty":
+            key = row.get("name") or "Unknown"
+        elif group_by == "month":
+            row_date = _parse_date(row.get("booking_date"))
+            key = row_date.strftime("%Y-%m") if row_date else "Unknown"
+        else:  # account
+            key = row.get("account") or "Unknown"
+
+        if key not in buckets:
+            buckets[key] = []
+        buckets[key].append(row_amount)
+
+    # Build result groups sorted by total amount (largest absolute spend first)
+    groups = []
+    grand_total = 0.0
+    for key, amounts in sorted(buckets.items(), key=lambda x: sum(x[1])):
+        total = round(sum(amounts), 2)
+        grand_total += total
+        groups.append(
+            {
+                "group": key,
+                "count": len(amounts),
+                "total": total,
+                "average": round(total / len(amounts), 2),
+                "min": round(min(amounts), 2),
+                "max": round(max(amounts), 2),
+            }
+        )
+
+    return {
+        "filters": {
+            "group_by": group_by,
+            "account": account,
+            "iban": iban,
+            "amount_min": amount_min,
+            "amount_max": amount_max,
+            "date_start": date_start,
+            "date_end": date_end,
+        },
+        "summary": {
+            "transactions_matched": total_matched,
+            "groups_returned": len(groups),
+            "grand_total": round(grand_total, 2),
+        },
+        "groups": groups,
+    }
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 def describe_fields() -> dict[str, Any]:
     """Return current CSV configuration and expected headers."""
-    _require_http_auth()
     _ensure_loaded()
     return {
         "csv_dir": str(_csv_directory()),
@@ -801,14 +869,13 @@ def describe_fields() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False})
 def reload_transactions() -> dict[str, Any]:
     """Reload CSV files and return record statistics."""
-    _require_http_auth()
     return _reload_transactions()
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 def health_check() -> dict[str, Any]:
     """Return server health status for monitoring.
 
@@ -820,8 +887,6 @@ def health_check() -> dict[str, Any]:
     - files_scanned: number of CSV files loaded
     - transport_mode: current transport (stdio/http)
     """
-    _require_http_auth()
-
     uptime = time.time() - _SERVER_START_TIME
 
     return {
@@ -1016,5 +1081,4 @@ if __name__ == "__main__":
         _validate_http_auth_config()
         host = os.getenv("MCP_HOST", "127.0.0.1")
         port = _env_int("MCP_PORT", 6668)
-        # Use streamable-http transport which supports stateless JSON responses
-        mcp.run(transport="streamable-http", host=host, port=port)
+        mcp.run(transport="http", host=host, port=port)

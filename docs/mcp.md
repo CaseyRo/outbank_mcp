@@ -52,7 +52,7 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=6668 \
   uv run python app.py
 ```
 
-The HTTP transport uses standard HTTP requests/responses with JSON-RPC format. **No SSE streaming** - all responses are returned as complete JSON objects. The service uses FastMCP's streamable-http mode internally, but responses are parsed transparently to provide pure JSON (no streaming behavior exposed to clients).
+The HTTP transport uses standard HTTP requests/responses with JSON-RPC format. The service uses FastMCP's streamable-http transport internally.
 
 **Authentication is required**: When using HTTP transport, `MCP_HTTP_AUTH_TOKEN` must be set (minimum 16 characters, 32+ recommended). The service will fail to start if the token is missing or too short. Include a bearer token in all HTTP requests.
 
@@ -74,13 +74,33 @@ Inputs:
 - `amount_min` / `amount_max` (number, optional)
 - `date` (YYYY-MM-DD, optional)
 - `date_start` / `date_end` (YYYY-MM-DD, optional)
-- `max_results` (default `25`)
+- `max_results` (default `25`, max `500`)
 - `sort` (`-date`, `date`, `-amount`, `amount`)
 
 Example questions:
 - "Find transactions for my ING account between 2024-01-01 and 2024-01-31."
 - "Show payments around 79.99 with IBAN NL00TEST123."
 - "List grocery expenses for the last week."
+
+### `aggregate_transactions`
+Group transactions and return totals, counts, and averages per group.
+Ideal for budget analysis, period comparisons, and spending summaries
+without returning individual transaction rows.
+
+Inputs:
+- `group_by` (`category`, `subcategory`, `counterparty`, `month`, or `account`)
+- `account` (string, optional)
+- `iban` (string, optional)
+- `amount_min` / `amount_max` (number, optional)
+- `date_start` / `date_end` (YYYY-MM-DD, optional)
+
+Each group in the response contains: `group`, `count`, `total`, `average`, `min`, `max`.
+
+Example questions:
+- "How much did I spend per category last quarter?"
+- "Show me a month-by-month breakdown of spending in 2025."
+- "Which counterparties do I spend the most with?"
+- "Compare my grocery spending across different accounts."
 
 ### `reload_transactions`
 Reloads CSV data from the configured folder and returns counts.

@@ -5,7 +5,7 @@ A practical guide for migrating MCP servers from FastMCP 2.x to 3.x, based on re
 ## Pre-Migration Checklist
 
 1. **Check current FastMCP version**: `uv pip show fastmcp` or check `pyproject.toml`
-2. **Check v3 availability**: As of Jan 2026, v3 is in beta (`3.0.0b1`). Latest stable is `2.14.x`
+2. **Check v3 availability**: v3.0.0 went stable on Feb 18, 2026. Latest stable is `3.0.2`
 3. **Create a migration branch**: Don't migrate on main
 
 ## Step 1: Update Dependencies
@@ -13,14 +13,14 @@ A practical guide for migrating MCP servers from FastMCP 2.x to 3.x, based on re
 ```toml
 # pyproject.toml
 dependencies = [
-  "fastmcp>=3.0.0b1,<4.0.0",  # Note: use b1 suffix for beta
+  "fastmcp>=3.0.0,<4.0.0",
   # ... other deps
 ]
 ```
 
 Then sync:
 ```bash
-uv sync --prerelease=allow
+uv sync
 ```
 
 ## Step 2: Verify Imports
@@ -66,8 +66,10 @@ If you use simple bearer token validation (comparing against an env var like `MC
 ```python
 class HTTPAuthMiddleware(Middleware):
     async def __call__(self, context: MiddlewareContext, call_next):
-        headers = get_http_headers()
-        if headers is None:
+        # get_http_headers strips authorization by default (3.0.2+);
+        # explicitly include it so we can validate the bearer token.
+        headers = get_http_headers(include={"authorization"})
+        if not headers:
             return await call_next(context)  # stdio transport
 
         auth_header = headers.get("authorization", "")
@@ -80,7 +82,7 @@ class HTTPAuthMiddleware(Middleware):
         return await call_next(context)
 ```
 
-This pattern is fully compatible with v3's `Middleware` base class.
+**Important (3.0.2+):** `get_http_headers()` now strips sensitive headers (`authorization`, `content-length`, etc.) by default to prevent leakage to downstream services. Use the `include` parameter to explicitly request headers you need. Headers are also normalized to lowercase.
 
 ## Step 4: Middleware Compatibility
 
@@ -108,6 +110,7 @@ class CustomMiddleware(Middleware):
 | `enable()` / `disable()` on components | Moved to server level | Update calls |
 | `include_fastmcp_meta` parameter | Removed | Remove if present |
 | `FASTMCP_SHOW_CLI_BANNER` env var | Renamed to `FASTMCP_SHOW_SERVER_BANNER` | Update if used |
+| `get_http_headers()` returns all headers | Now strips `authorization`, `content-length`, etc. by default (3.0.2+) | Use `include={"authorization"}` param |
 
 ## Step 6: Transport Changes
 
@@ -226,11 +229,11 @@ Once stable on v3, consider adopting:
 # Check version
 uv run python -c "import fastmcp; print(fastmcp.__version__)"
 
-# Install v3 beta
-uv add "fastmcp>=3.0.0b1,<4.0.0" --prerelease=allow
+# Install v3 stable
+uv add "fastmcp>=3.0.0,<4.0.0"
 
-# Run with prerelease
-uv sync --prerelease=allow
+# Sync dependencies
+uv sync
 
 # Test imports
 uv run python -c "from fastmcp import FastMCP; print('OK')"

@@ -1,8 +1,8 @@
 # Outbank MCP CSV Workspace
 
 Local-first MCP query service that reads Outbank CSV exports from a folder,
-normalizes transactions in memory, and exposes read-only search tools.
-Supports both Docker containerized setup and direct Python execution.
+normalizes transactions in memory, and exposes search and aggregation tools
+to LLMs. Supports both Docker containerized setup and direct Python execution.
 
 ## Purpose and responsibility
 This project exists solely to supply LLMs with your finance data using exports
@@ -25,8 +25,39 @@ your local data is safer than uploading raw CSV exports repeatedly.
 >
 > If someone asks for these, they are impersonating us. Report them and do not comply.
 
+## Why not just use Outbank directly?
+
+Outbank is excellent at showing you transactions. It has filters, categories, and search.
+But there is a category of questions it cannot answer — questions that require
+**reasoning**, not just filtering.
+
+"Did my grocery spending go up after I moved?" is not a filter query. It requires
+comparing two date ranges, summing a category in each, and drawing a conclusion.
+"Find every recurring subscription and total the annual cost" requires detecting
+patterns across months. "Walk me through where my paycheck went" requires turning
+40 line items into a readable narrative.
+
+An LLM connected to this MCP server does all of that. Outbank shows you the
+transactions. The LLM **interprets** them.
+
+The other thing Outbank cannot do is talk to your other tools. Because this runs
+as an MCP server, Claude can query your banking data in the same conversation where it
+reads your calendar, checks your email, or updates your task manager. "I had a work
+trip last week — total up the expenses" pulls from two MCP servers at once. No
+banking app will ever do that.
+
+**Example prompts that become possible:**
+
+- "Give me a plain-language summary of where my money went in January."
+- "Am I spending more on dining out compared to three months ago?"
+- "Find any new recurring charges that appeared in the last six months."
+- "Which of my transactions this year might be tax-deductible?"
+- "I was in Berlin for work March 10-13, build me an expense report."
+- "Have I been charged twice for anything this month?"
+
 ## What is here
-- Python MCP service for CSV-folder ingestion and query tools
+- Python MCP service (FastMCP 3.0) for CSV-folder ingestion and query tools
+- Five tools: `search_transactions`, `aggregate_transactions`, `describe_fields`, `reload_transactions`, `health_check`
 - Automated test suite for stdio and HTTP transport modes
   - Unit tests, error handling, and user workflow tests
   - BDD workflow tests using Gherkin feature files (pytest-bdd)

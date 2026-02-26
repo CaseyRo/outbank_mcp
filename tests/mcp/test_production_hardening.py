@@ -54,8 +54,8 @@ class TestRequestSizeLimiting:
     @pytest.mark.http
     def test_moderate_query_size_accepted(self, http_client):
         """Test that moderate-sized query parameters are accepted."""
-        # Create a reasonable-sized query (1KB)
-        moderate_query = "grocery " * 100  # ~800 bytes
+        # Create a reasonable-sized query (under 500-char server limit)
+        moderate_query = "grocery " * 50  # ~400 bytes
 
         response = http_client.send_request(
             "tools/call",
