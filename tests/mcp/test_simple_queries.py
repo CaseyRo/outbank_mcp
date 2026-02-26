@@ -2,7 +2,13 @@
 
 import json
 
-EXPECTED_TOOLS = {"search_transactions", "describe_fields", "reload_transactions", "health_check"}
+EXPECTED_TOOLS = {
+    "search_transactions",
+    "aggregate_transactions",
+    "describe_fields",
+    "reload_transactions",
+    "health_check",
+}
 
 
 class TestStdioSimpleQueries:
