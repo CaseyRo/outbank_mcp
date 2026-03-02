@@ -1,5 +1,15 @@
 # Outbank MCP CSV Workspace
 
+[![PyPI](https://img.shields.io/pypi/v/mcp-outbank)](https://pypi.org/project/mcp-outbank/)
+
+## Installation
+
+```bash
+pip install mcp-outbank
+# or run directly without installing:
+uvx mcp-outbank
+```
+
 Local-first MCP query service that reads Outbank CSV exports from a folder,
 normalizes transactions in memory, and exposes search and aggregation tools
 to LLMs. Supports both Docker containerized setup and direct Python execution.
