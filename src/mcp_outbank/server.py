@@ -12,9 +12,12 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+from pydantic import AnyHttpUrl
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -200,6 +203,91 @@ def _audit_log(tool_name: str, parameters: dict[str, Any], client_ip: str | None
         entry["client_ip"] = client_ip
 
     logger.info(json.dumps(entry, default=str))
+
+
+class CompositeTokenVerifier(TokenVerifier):
+    """Token verifier that tries multiple verifiers in order.
+
+    Attempts JWT verification first (for Keycloak tokens), then falls back
+    to static bearer token verification. The first verifier to return a
+    valid AccessToken wins.
+    """
+
+    def __init__(
+        self,
+        verifiers: list[TokenVerifier],
+        **kwargs: Any,
+    ):
+        super().__init__(**kwargs)
+        self.verifiers = verifiers
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        for verifier in self.verifiers:
+            result = await verifier.verify_token(token)
+            if result is not None:
+                return result
+        return None
+
+
+class StaticBearerTokenVerifier(TokenVerifier):
+    """Verifies tokens against the static MCP_HTTP_AUTH_TOKEN env var.
+
+    This preserves the existing bearer-token authentication behaviour so
+    that clients that do not use Keycloak JWTs can still authenticate with
+    the pre-shared API key.
+    """
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        expected = os.getenv("MCP_HTTP_AUTH_TOKEN", "").strip()
+        if not expected:
+            return None
+        if not hmac.compare_digest(token.strip(), expected):
+            return None
+        return AccessToken(
+            token=token,
+            client_id="static-bearer",
+            scopes=["openid"],
+        )
+
+
+def _build_auth_provider() -> RemoteAuthProvider | None:
+    """Build the FastMCP auth provider for HTTP transport.
+
+    Returns a RemoteAuthProvider that:
+    1. Validates Keycloak JWTs via JWKS (primary)
+    2. Falls back to the static MCP_HTTP_AUTH_TOKEN bearer token
+    3. Serves /.well-known/oauth-protected-resource metadata
+
+    Returns None when running in stdio mode (no auth needed).
+    """
+    transport = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
+    if transport != "http":
+        return None
+
+    issuer = os.environ.get("KEYCLOAK_ISSUER", "https://auth.cdit-works.de/realms/cdit-mcp")
+    audience = os.environ.get("KEYCLOAK_AUDIENCE", "mcp-outbank")
+    base_url = os.environ.get("MCP_BASE_URL", "https://mcp-outbank.cdit-dev.de")
+
+    # Primary: Keycloak JWT verification via the realm's JWKS endpoint
+    jwt_verifier = JWTVerifier(
+        jwks_uri=f"{issuer.rstrip('/')}/protocol/openid-connect/certs",
+        issuer=issuer,
+        audience=audience,
+    )
+
+    # Secondary: static bearer token (existing behaviour)
+    static_verifier = StaticBearerTokenVerifier()
+
+    # Composite: try JWT first, then fall back to static token
+    composite = CompositeTokenVerifier(verifiers=[jwt_verifier, static_verifier])
+
+    return RemoteAuthProvider(
+        token_verifier=composite,
+        authorization_servers=[AnyHttpUrl(issuer)],
+        base_url=AnyHttpUrl(base_url),
+        scopes_supported=["openid"],
+        resource_name="Outbank MCP Server",
+    )
 
 
 def _parse_amount(value: Any) -> float | None:
@@ -609,10 +697,15 @@ class AuditLoggingMiddleware(Middleware):
 # Check transport mode from environment directly to avoid function dependency
 _transport_env = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
 
+# Build auth provider (handles both JWT and static bearer token verification)
+_auth_provider = _build_auth_provider()
+
 # Build middleware list for HTTP transport
+# NOTE: HTTPAuthMiddleware is no longer needed here — authentication is now
+# handled by FastMCP's built-in auth layer via _auth_provider (which supports
+# both Keycloak JWTs and the static MCP_HTTP_AUTH_TOKEN).
 _http_middlewares: list[Middleware] = []
 if _transport_env == "http":
-    _http_middlewares.append(HTTPAuthMiddleware())
     _http_middlewares.append(RequestSizeLimitMiddleware(_env_max_request_size()))
 
     # Add rate limiting if configured
@@ -625,7 +718,7 @@ if _transport_env == "http":
     if _env_audit_enabled():
         _http_middlewares.append(AuditLoggingMiddleware())
 
-mcp = FastMCP("finance-mcp", middleware=_http_middlewares)
+mcp = FastMCP("finance-mcp", auth=_auth_provider, middleware=_http_middlewares)
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
@@ -957,20 +1050,29 @@ def _validate_token_security(token: str) -> None:
 
 
 def _validate_http_auth_config() -> None:
-    """Validate that HTTP auth token is configured and secure when using HTTP transport."""
+    """Validate that HTTP auth is configured when using HTTP transport.
+
+    At least one auth method must be available:
+    - Keycloak JWT (via KEYCLOAK_ISSUER), or
+    - Static bearer token (via MCP_HTTP_AUTH_TOKEN), or
+    - Both (recommended)
+    """
     transport = _transport_mode()
     if transport == "http":
         token = os.getenv("MCP_HTTP_AUTH_TOKEN", "").strip()
-        if not token:
+        keycloak_issuer = os.getenv("KEYCLOAK_ISSUER", "").strip()
+
+        if not token and not keycloak_issuer:
             raise ValueError(
-                "MCP_HTTP_AUTH_TOKEN is required when using HTTP transport. "
-                "Set MCP_HTTP_AUTH_TOKEN in your environment or .env file. "
+                "HTTP transport requires at least one auth method. "
+                "Set KEYCLOAK_ISSUER for JWT auth, MCP_HTTP_AUTH_TOKEN for bearer auth, or both. "
                 "For local-only use, consider using stdio transport (MCP_TRANSPORT=stdio) "
                 "which does not require authentication. "
                 "Generate a secure token with: "
                 'python -c "import secrets; print(secrets.token_urlsafe(32))"'
             )
-        _validate_token_security(token)
+        if token:
+            _validate_token_security(token)
 
 
 def _display_startup_info() -> None:
@@ -1013,7 +1115,19 @@ def _display_startup_info() -> None:
         table.add_row(
             "[bold cyan]Endpoint:[/bold cyan]", f"[yellow]http://{host}:{port}/mcp[/yellow]"
         )
-        table.add_row("[bold cyan]Auth:[/bold cyan]", "[green]Required (Bearer token)[/green]")
+        issuer = os.environ.get("KEYCLOAK_ISSUER", "")
+        if issuer:
+            table.add_row(
+                "[bold cyan]Auth:[/bold cyan]",
+                "[green]Keycloak JWT + Bearer token[/green]",
+            )
+            table.add_row("[bold cyan]Issuer:[/bold cyan]", f"[white]{issuer}[/white]")
+            table.add_row(
+                "[bold cyan]Audience:[/bold cyan]",
+                f"[white]{os.environ.get('KEYCLOAK_AUDIENCE', 'mcp-outbank')}[/white]",
+            )
+        else:
+            table.add_row("[bold cyan]Auth:[/bold cyan]", "[green]Required (Bearer token)[/green]")
 
     table.add_row("", "")  # Spacer
     table.add_row("[bold cyan]CSV Directory:[/bold cyan]", f"[white]{csv_dir}[/white]")
