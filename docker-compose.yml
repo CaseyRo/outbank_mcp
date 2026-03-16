@@ -15,6 +15,9 @@ services:
       OUTBANK_CSV_DIR: /data/outbank_exports
       OUTBANK_CSV_GLOB: ${OUTBANK_CSV_GLOB:-*.csv}
       EXCLUDED_CATEGORIES: ${EXCLUDED_CATEGORIES:-Transfer}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-mcp-outbank}
+      MCP_BASE_URL: ${MCP_BASE_URL:-}
     volumes:
       - ${OUTBANK_CSV_HOST_DIR:-./outbank_exports}:/data/outbank_exports:ro
     restart: unless-stopped
