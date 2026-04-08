@@ -997,7 +997,7 @@ def main():
     else:
         host = os.getenv("MCP_HOST", "127.0.0.1")
         port = _env_int("MCP_PORT", 6668)
-        mcp.run(transport="http", host=host, port=port)
+        mcp.run(transport="streamable-http", host=host, port=port)
 
 
 if __name__ == "__main__":
