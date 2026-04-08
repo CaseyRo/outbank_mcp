@@ -613,7 +613,7 @@ def search_transactions(
     max_results: int = 25,
     sort: str = "-date",
 ) -> dict[str, Any]:
-    """Search transactions with fuzzy matching and optional filters.
+    """[finance] Search transactions with fuzzy matching and optional filters.
 
     Inputs are optional unless noted:
     - query: free-text search needle
@@ -733,7 +733,7 @@ def aggregate_transactions(
     date_start: str | None = None,
     date_end: str | None = None,
 ) -> dict[str, Any]:
-    """Aggregate transactions into groups with totals, counts, and averages.
+    """[finance] Aggregate transactions into groups with totals, counts, and averages.
 
     Returns spending breakdown without returning individual transactions.
     Ideal for budget analysis, period comparisons, and spending summaries.
@@ -831,7 +831,7 @@ def aggregate_transactions(
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 def describe_fields() -> dict[str, Any]:
-    """Return current CSV configuration and expected headers."""
+    """[finance] Return current CSV configuration and expected headers."""
     _ensure_loaded()
     return {
         "csv_dir": str(_csv_directory()),
@@ -844,13 +844,13 @@ def describe_fields() -> dict[str, Any]:
 
 @mcp.tool(annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False})
 def reload_transactions() -> dict[str, Any]:
-    """Reload CSV files and return record statistics."""
+    """[finance] Reload CSV files and return record statistics."""
     return _reload_transactions()
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
 def health_check() -> dict[str, Any]:
-    """Return server health status for monitoring.
+    """[finance] Return server health status for monitoring.
 
     Returns:
     - status: "healthy" if operational
