@@ -19,6 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from .auth import BearerTokenVerifier
 from .exclusion_filters import (
     env_exclusion_list_display,
     should_exclude_transaction,
@@ -199,35 +200,6 @@ def _audit_log(tool_name: str, parameters: dict[str, Any], client_ip: str | None
         entry["client_ip"] = client_ip
 
     logger.info(json.dumps(entry, default=str))
-
-
-def _build_auth_provider():
-    """Build the OIDCProxy auth provider for HTTP transport.
-
-    Returns an OIDCProxy that proxies the OAuth flow to Keycloak.
-    Returns None when running in stdio mode or when KEYCLOAK_CLIENT_SECRET is not set.
-    """
-    from .auth import create_auth
-
-    transport = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
-    if transport != "http":
-        return None
-
-    issuer = os.environ.get("KEYCLOAK_ISSUER", "https://auth.cdit-works.de/realms/cdit-mcp")
-    base_url = os.environ.get("MCP_BASE_URL", "https://mcp-outbank.cdit-dev.de")
-    client_id = os.environ.get("KEYCLOAK_CLIENT_ID", "mcp-outbank")
-    client_secret = os.environ.get("KEYCLOAK_CLIENT_SECRET")
-
-    if not client_secret:
-        logging.warning("KEYCLOAK_CLIENT_SECRET not set — auth disabled")
-        return None
-
-    return create_auth(
-        base_url=base_url,
-        keycloak_issuer=issuer,
-        keycloak_client_id=client_id,
-        keycloak_client_secret=client_secret,
-    )
 
 
 def _parse_amount(value: Any) -> float | None:
@@ -605,13 +577,11 @@ class AuditLoggingMiddleware(Middleware):
 # Check transport mode from environment directly to avoid function dependency
 _transport_env = os.getenv("MCP_TRANSPORT", "stdio").strip().lower()
 
-# Build auth provider (handles both JWT and static bearer token verification)
-_auth_provider = _build_auth_provider()
+# Build bearer-token auth (optional — only active when MCP_API_KEY is set)
+_api_key = os.getenv("MCP_API_KEY", "")
+_auth = BearerTokenVerifier(api_key=_api_key) if _api_key else None
 
 # Build middleware list for HTTP transport
-# NOTE: HTTPAuthMiddleware is no longer needed here — authentication is now
-# handled by FastMCP's built-in auth layer via _auth_provider (which supports
-# both Keycloak JWTs and the static MCP_HTTP_AUTH_TOKEN).
 _http_middlewares: list[Middleware] = []
 if _transport_env == "http":
     _http_middlewares.append(RequestSizeLimitMiddleware(_env_max_request_size()))
@@ -626,7 +596,7 @@ if _transport_env == "http":
     if _env_audit_enabled():
         _http_middlewares.append(AuditLoggingMiddleware())
 
-mcp = FastMCP("finance-mcp", auth=_auth_provider, middleware=_http_middlewares)
+mcp = FastMCP("finance-mcp", auth=_auth, middleware=_http_middlewares)
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
@@ -909,25 +879,6 @@ def _transport_mode() -> str:
     return mode
 
 
-def _validate_http_auth_config() -> None:
-    """Validate that HTTP auth is configured when using HTTP transport.
-
-    Requires KEYCLOAK_ISSUER and KEYCLOAK_CLIENT_SECRET for OIDCProxy auth.
-    """
-    transport = _transport_mode()
-    if transport == "http":
-        keycloak_issuer = os.getenv("KEYCLOAK_ISSUER", "").strip()
-        client_secret = os.getenv("KEYCLOAK_CLIENT_SECRET", "").strip()
-
-        if not keycloak_issuer or not client_secret:
-            raise ValueError(
-                "HTTP transport requires Keycloak OIDCProxy auth. "
-                "Set KEYCLOAK_ISSUER and KEYCLOAK_CLIENT_SECRET. "
-                "For local-only use, consider using stdio transport (MCP_TRANSPORT=stdio) "
-                "which does not require authentication."
-            )
-
-
 def _display_startup_info() -> None:
     """Display startup information using rich formatting.
 
@@ -968,22 +919,15 @@ def _display_startup_info() -> None:
         table.add_row(
             "[bold cyan]Endpoint:[/bold cyan]", f"[yellow]http://{host}:{port}/mcp[/yellow]"
         )
-        issuer = os.environ.get("KEYCLOAK_ISSUER", "")
-        client_id = os.environ.get("KEYCLOAK_CLIENT_ID", "mcp-outbank")
-        if issuer and os.environ.get("KEYCLOAK_CLIENT_SECRET"):
+        if _api_key:
             table.add_row(
                 "[bold cyan]Auth:[/bold cyan]",
-                "[green]Keycloak OIDCProxy[/green]",
-            )
-            table.add_row("[bold cyan]Issuer:[/bold cyan]", f"[white]{issuer}[/white]")
-            table.add_row(
-                "[bold cyan]Client ID:[/bold cyan]",
-                f"[white]{client_id}[/white]",
+                "[green]Bearer token (MCP_API_KEY)[/green]",
             )
         else:
             table.add_row(
                 "[bold cyan]Auth:[/bold cyan]",
-                "[yellow]Disabled (no KEYCLOAK_CLIENT_SECRET)[/yellow]",
+                "[yellow]Disabled (no MCP_API_KEY)[/yellow]",
             )
 
     table.add_row("", "")  # Spacer
@@ -1051,7 +995,6 @@ def main():
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        _validate_http_auth_config()
         host = os.getenv("MCP_HOST", "127.0.0.1")
         port = _env_int("MCP_PORT", 6668)
         mcp.run(transport="http", host=host, port=port)
