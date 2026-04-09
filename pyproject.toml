@@ -1,6 +1,6 @@
 [project]
 name = "mcp-outbank"
-version = "1.0.0"
+version = "1.1.0"
 description = "Local-first Outbank CSV MCP query service"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "fastmcp>=3.1.0,<4.0.0",
+  "fastmcp>=3.2.2,<4.0.0",
   "python-dotenv",
   "rich>=13.0.0",
   "PyJWT>=2.12.0",
