@@ -29,7 +29,7 @@ mcp-outbank = "mcp_outbank.server:main"
 
 [dependency-groups]
 dev = [
-  "pytest>=7.0.0",
+  "pytest>=9.0.3",
   "requests>=2.31.0",
   "pytest-bdd>=7.0.0",
   "pre-commit>=3.6.0",
